@@ -1,0 +1,129 @@
+-- Select Data that is going to be used:
+SELECT location, date, total_cases, new_cases, total_deaths, population
+FROM coviddeaths
+ORDER BY 1,2;
+
+-- Total Cases vs Total Deaths (Death Rate):
+-- Shows likelihood of dying if you contract COVID in the USA by Date:
+SELECT location, date, total_cases, total_deaths, (CAST(total_deaths as DECIMAL)/total_cases)*100 AS death_rate
+FROM coviddeaths
+WHERE location = 'United States' AND continent is not null
+ORDER BY 1,2;
+
+-- Total Cases vs Population (Infection Rate):
+-- Shows what percentage of the population has gotten infected with COVID in the USA by Date:
+SELECT location, date, total_cases, population, (CAST(total_cases as DECIMAL)/population)*100 AS infection_rate
+FROM coviddeaths
+WHERE location = 'United States' AND continent is not null
+ORDER BY 1,2;
+
+--Countries with highest infection rate compared to their population:
+SELECT location, population, MAX(total_cases) AS highest_infection_count, (CAST(MAX(total_cases) as DECIMAL)/population)*100 AS max_infection_rate
+FROM coviddeaths
+WHERE continent is not null
+GROUP BY location, population
+ORDER BY max_infection_rate DESC;
+
+--Countries with highest death rate compared to their population:
+SELECT location, population, MAX(total_deaths) AS highest_death_count, (CAST(MAX(total_deaths) as DECIMAL)/population)*100 AS max_death_rate
+FROM coviddeaths
+WHERE continent is not null
+GROUP BY location, population
+ORDER BY max_death_rate DESC;
+
+--Countries with highest death count:
+SELECT location, population, MAX(total_deaths) AS highest_death_count
+FROM coviddeaths
+WHERE continent is not null
+GROUP BY location, population
+ORDER BY highest_death_count DESC;
+
+--LET'S EXPLORE THE DATA AT THE CONTINENT AGGREGATION LEVEL:
+
+--Highest death count by continent:
+SELECT location, MAX(total_deaths) AS highest_death_count
+FROM coviddeaths
+WHERE continent is null
+GROUP BY location
+ORDER BY highest_death_count DESC;
+
+--GLOBAL NUMBERS:
+
+--Global death rate by date:
+SELECT date, SUM(new_cases) AS total_cases, SUM(new_deaths) AS total_deaths,(CAST(SUM(new_deaths) as DECIMAL)/SUM(new_cases)*100) AS global_death_rate
+FROM coviddeaths
+WHERE continent is not null
+GROUP BY date
+ORDER BY 1;
+
+--Global death rate:
+SELECT SUM(new_cases) AS total_cases, SUM(new_deaths) AS total_deaths,(CAST(SUM(new_deaths) AS DECIMAL)/SUM(new_cases)*100) AS global_death_rate
+FROM coviddeaths
+WHERE continent is not null
+ORDER BY 1;
+
+--Population vs Vaccination with rolling count of vaccinated people:
+SELECT d.continent, d.location, d.date, d.population, v.new_vaccinations,
+(SUM(CAST(v.new_vaccinations AS DECIMAL)) OVER (PARTITION BY d.location ORDER BY d.location, d.date)) AS rolling_vaccinated_count
+FROM coviddeaths d
+JOIN covidvaccinations v
+ON d.location = v.location
+AND d.date = v.date
+WHERE d.continent is not null
+ORDER BY 2,3;
+
+-- Adding a rolling vaccination rate to previous query using a CTE:
+
+WITH PopvsVac(continent, location, date, population, new_vaccinations, rolling_vaccinated_count)
+AS(
+SELECT d.continent, d.location, d.date, d.population, v.new_vaccinations,
+(SUM(CAST(v.new_vaccinations AS DECIMAL)) OVER (PARTITION BY d.location ORDER BY d.location, d.date)) AS rolling_vaccinated_count
+FROM coviddeaths d
+JOIN covidvaccinations v
+ON d.location = v.location
+AND d.date = v.date
+WHERE d.continent is not null)
+SELECT *, (rolling_vaccinated_count/population)*100 AS rolling_vaccination_rate
+FROM PopvsVac
+ORDER BY 2,3
+
+-- -- Adding a rolling vaccination rate to previous query using a Temp Table:
+
+DROP TABLE IF EXISTS PercentPopulationVaccinated;
+CREATE TEMPORARY TABLE PercentPopulationVaccinated
+(
+continent VARCHAR(255),
+location VARCHAR(255),
+date DATE,
+population BIGINT,
+new_vaccinations BIGINT,
+rolling_vaccinated_count BIGINT
+);
+
+INSERT INTO PercentPopulationVaccinated
+SELECT d.continent, d.location, d.date, d.population, v.new_vaccinations,
+(SUM(CAST(v.new_vaccinations AS DECIMAL)) OVER (PARTITION BY d.location ORDER BY d.location, d.date)) AS rolling_vaccinated_count
+FROM coviddeaths d
+JOIN covidvaccinations v
+ON d.location = v.location
+AND d.date = v.date
+WHERE d.continent is not null;
+
+SELECT *, (rolling_vaccinated_count/population)*100 AS rolling_vaccination_rate
+FROM PercentPopulationVaccinated
+ORDER BY 2,3;
+
+-- Adding a rolling vaccination rate to previous query using a View:
+
+CREATE VIEW PercentPopulationVaccinated AS
+SELECT d.continent, d.location, d.date, d.population, v.new_vaccinations,
+(SUM(CAST(v.new_vaccinations AS DECIMAL)) OVER (PARTITION BY d.location ORDER BY d.location, d.date)) AS rolling_vaccinated_count
+FROM coviddeaths d
+JOIN covidvaccinations v
+ON d.location = v.location
+AND d.date = v.date
+WHERE d.continent is not null;
+
+SELECT *, (rolling_vaccinated_count/population)*100 AS rolling_vaccination_rate
+FROM PercentPopulationVaccinated
+ORDER BY 2,3;
